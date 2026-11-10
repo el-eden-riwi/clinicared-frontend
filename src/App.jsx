@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { 
-  Calendar, Clock, User, ShieldCheck, Activity, 
-  Stethoscope, AlertTriangle, CheckCircle, Database, 
+import {
+  Calendar, Clock, User, ShieldCheck, Activity,
+  Stethoscope, AlertTriangle, CheckCircle, Database,
   Server, Cpu, ArrowRight, LogIn, Send, BookOpen, ExternalLink
 } from 'lucide-react';
 
@@ -12,7 +12,7 @@ export default function App() {
   const [showArchitectureModal, setShowArchitectureModal] = useState(false);
   const [notification, setNotification] = useState(null);
 
-  const docsUrl = "https://el-eden-riwi.github.io/clinicared-docs/";
+  const docsUrl = "https://el-edan-riwi.github.io/clinicared-docs/";
 
   const [bookingData, setBookingData] = useState({
     patientName: '',
@@ -35,29 +35,77 @@ export default function App() {
     setCurrentView('booking');
   };
 
-  const handleBookingSubmit = (e) => {
+  const handleBookingSubmit = async (e) => {
     e.preventDefault();
-    setNotification({
-      title: '¡Cita Agendada Exitosamente!',
-      message: `Registrada en PostgreSQL (RDS) con Header X-Idempotency-Key: ${idempotencyKey}. Evento publicado en RabbitMQ.`,
-      type: 'success'
-    });
+    try {
+      const response = await fetch('http://127.0.0.1:8000/simulate/messaging/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({
+          recipient: bookingData.patientName,
+          message: `Cita confirmada con ${bookingData.doctor} (${bookingData.specialty}) el ${bookingData.date} a las ${bookingData.time}. Key: ${idempotencyKey}`,
+          channel: 'SMS'
+        })
+      });
+
+      const data = await response.json();
+
+      setNotification({
+        title: '¡Cita Agendada y Despachada!',
+        message: `Inyectada en RabbitMQ en vivo [${data.status || 'QUEUED'}]. Key: ${idempotencyKey}`,
+        type: 'success'
+      });
+    } catch (error) {
+      console.error('Error al conectar con la API:', error);
+      setNotification({
+        title: '¡Cita Agendada (Modo Local)!',
+        message: `Registrada con Header X-Idempotency-Key: ${idempotencyKey}`,
+        type: 'success'
+      });
+    }
+
     setTimeout(() => setNotification(null), 6000);
     setCurrentView('home');
   };
 
-  const triggerCeleryTask = (patient) => {
-    setNotification({
-      title: 'Tarea Asíncrona en Celery',
-      message: `Evento de recordatorio prioritario para ${patient.name} despachado a la cola RabbitMQ.`,
-      type: 'info'
-    });
+  const triggerCeleryTask = async (patient) => {
+    try {
+      const response = await fetch('http://127.0.0.1:8000/simulate/messaging/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          recipient: patient.name,
+          message: `Recordatorio urgente Celery: Riesgo ${patient.risk} (${patient.score}) en ${patient.specialty}`,
+          channel: 'SMS'
+        })
+      });
+
+      const data = await response.json();
+
+      setNotification({
+        title: 'Tarea Asíncrona en Celery',
+        message: `Evento para ${patient.name} encolado en RabbitMQ [${data.status || 'QUEUED'}].`,
+        type: 'info'
+      });
+    } catch (error) {
+      console.error('Error al notificar Celery:', error);
+      setNotification({
+        title: 'Tarea Asíncrona en Celery',
+        message: `Evento de recordatorio prioritario para ${patient.name} despachado a la cola RabbitMQ.`,
+        type: 'info'
+      });
+    }
+
     setTimeout(() => setNotification(null), 5000);
   };
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans">
-      
       {/* 1. HUD de Infraestructura Activa en AWS */}
       <div className="bg-slate-950 border-b border-slate-800 text-xs px-4 py-2 flex flex-wrap justify-between items-center text-slate-400">
         <div className="flex items-center space-x-4">
@@ -69,7 +117,7 @@ export default function App() {
           <span className="flex items-center"><Database className="w-3.5 h-3.5 mr-1 text-indigo-400" /> PostgreSQL RDS</span>
           <span className="flex items-center"><Cpu className="w-3.5 h-3.5 mr-1 text-orange-400" /> RabbitMQ Broker</span>
         </div>
-        <button 
+        <button
           onClick={() => setShowArchitectureModal(true)}
           className="text-sky-400 hover:text-sky-300 underline font-medium cursor-pointer"
         >
@@ -90,7 +138,6 @@ export default function App() {
         </div>
 
         <div className="flex items-center space-x-3">
-          {/* Botón directo a Docusaurus Docs */}
           <a
             href={docsUrl}
             target="_blank"
@@ -98,7 +145,7 @@ export default function App() {
             className="flex items-center space-x-1.5 text-sm bg-slate-800/80 hover:bg-slate-700 text-sky-400 border border-slate-700 hover:border-sky-500 px-3.5 py-2 rounded-lg transition"
           >
             <BookOpen className="w-4 h-4 text-sky-400" />
-            <span className="font-medium">Docs Arquitectura</span>
+            <span className="font-semibold">Docusaurus Docs</span>
             <ExternalLink className="w-3 h-3 text-slate-400 ml-0.5" />
           </a>
 
@@ -108,14 +155,14 @@ export default function App() {
                 Rol: <strong className="capitalize text-sky-400">{userRole}</strong>
               </span>
               {userRole === 'doctor' && (
-                <button 
+                <button
                   onClick={() => setCurrentView('doctor-portal')}
                   className={`text-sm px-3 py-1.5 rounded-lg border transition ${currentView === 'doctor-portal' ? 'bg-sky-600 border-sky-500 text-white' : 'border-slate-700 text-slate-300 hover:bg-slate-800'}`}
                 >
                   Portal Médico
                 </button>
               )}
-              <button 
+              <button
                 onClick={() => { setUserRole(null); setCurrentView('home'); }}
                 className="text-xs text-rose-400 hover:text-rose-300 underline ml-2"
               >
@@ -123,7 +170,7 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <button 
+            <button
               onClick={() => setCurrentView('auth')}
               className="flex items-center space-x-2 text-sm bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-4 py-2 rounded-lg transition"
             >
@@ -164,7 +211,7 @@ export default function App() {
                 Agendamiento transaccional protegido con idempotencia y predicción de inasistencia impulsado por PySpark y Apache Airflow.
               </p>
               <div className="flex flex-wrap justify-center gap-4 pt-4">
-                <button 
+                <button
                   onClick={startBooking}
                   className="bg-sky-500 hover:bg-sky-400 text-white font-semibold px-6 py-3 rounded-xl shadow-lg shadow-sky-500/20 flex items-center space-x-2 transition cursor-pointer"
                 >
@@ -172,7 +219,7 @@ export default function App() {
                   <span>Agendar Cita Médica</span>
                   <ArrowRight className="w-4 h-4 ml-1" />
                 </button>
-                <button 
+                <button
                   onClick={() => { setUserRole('doctor'); setCurrentView('doctor-portal'); }}
                   className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-6 py-3 rounded-xl border border-slate-700 flex items-center space-x-2 transition cursor-pointer"
                 >
@@ -236,12 +283,12 @@ export default function App() {
             <form onSubmit={handleBookingSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">Nombre Completo</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   required
                   placeholder="Ej. Juan Pérez"
                   value={bookingData.patientName}
-                  onChange={(e) => setBookingData({...bookingData, patientName: e.target.value})}
+                  onChange={(e) => setBookingData({ ...bookingData, patientName: e.target.value })}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
                 />
               </div>
@@ -249,9 +296,9 @@ export default function App() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">Especialidad</label>
-                  <select 
+                  <select
                     value={bookingData.specialty}
-                    onChange={(e) => setBookingData({...bookingData, specialty: e.target.value})}
+                    onChange={(e) => setBookingData({ ...bookingData, specialty: e.target.value })}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
                   >
                     <option>Medicina General</option>
@@ -260,11 +307,12 @@ export default function App() {
                     <option>Pediatría</option>
                   </select>
                 </div>
+
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">Especialista</label>
-                  <select 
+                  <select
                     value={bookingData.doctor}
-                    onChange={(e) => setBookingData({...bookingData, doctor: e.target.value})}
+                    onChange={(e) => setBookingData({ ...bookingData, doctor: e.target.value })}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
                   >
                     <option>Dra. Elena Gómez</option>
@@ -277,25 +325,26 @@ export default function App() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">Fecha</label>
-                  <input 
-                    type="date" 
+                  <input
+                    type="date"
                     value={bookingData.date}
-                    onChange={(e) => setBookingData({...bookingData, date: e.target.value})}
+                    onChange={(e) => setBookingData({ ...bookingData, date: e.target.value })}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">Hora</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={bookingData.time}
-                    onChange={(e) => setBookingData({...bookingData, time: e.target.value})}
+                    onChange={(e) => setBookingData({ ...bookingData, time: e.target.value })}
                     className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
 
-              <button 
+              <button
                 type="submit"
                 className="w-full mt-4 bg-sky-500 hover:bg-sky-400 text-white font-semibold py-3 rounded-xl transition cursor-pointer"
               >
@@ -346,7 +395,7 @@ export default function App() {
                         </span>
                       </td>
                       <td className="p-4 text-right">
-                        <button 
+                        <button
                           onClick={() => triggerCeleryTask(p)}
                           className="inline-flex items-center space-x-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-600 transition cursor-pointer"
                         >
@@ -368,7 +417,7 @@ export default function App() {
             <p className="text-xs text-slate-400 mb-6">Selecciona el perfil para interactuar con la plataforma</p>
 
             <div className="space-y-3">
-              <button 
+              <button
                 onClick={() => { setUserRole('patient'); setCurrentView('home'); }}
                 className="w-full bg-slate-900 hover:bg-slate-700 border border-slate-700 p-4 rounded-xl text-left flex items-center justify-between transition cursor-pointer"
               >
@@ -382,7 +431,7 @@ export default function App() {
                 <ArrowRight className="w-4 h-4 text-slate-500" />
               </button>
 
-              <button 
+              <button
                 onClick={() => { setUserRole('doctor'); setCurrentView('doctor-portal'); }}
                 className="w-full bg-slate-900 hover:bg-slate-700 border border-slate-700 p-4 rounded-xl text-left flex items-center justify-between transition cursor-pointer"
               >
@@ -404,14 +453,14 @@ export default function App() {
       {showArchitectureModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 max-w-lg w-full rounded-2xl p-6 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="font-bold text-white flex items-center space-x-2">
                 <Server className="w-5 h-5 text-sky-400" />
                 <span>Arquitectura Distribuida</span>
               </h3>
               <button onClick={() => setShowArchitectureModal(false)} className="text-slate-400 hover:text-white cursor-pointer">✕</button>
             </div>
-            
+
             <div className="text-xs space-y-3 text-slate-300">
               <div className="p-3 bg-slate-800/60 rounded-xl">
                 <span className="font-semibold text-sky-400 block mb-0.5">Capa Transaccional (OLTP)</span>
@@ -437,7 +486,7 @@ export default function App() {
                 <span>Ver documentación técnica completa</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
-              <button 
+              <button
                 onClick={() => setShowArchitectureModal(false)}
                 className="bg-slate-800 hover:bg-slate-700 text-white font-medium py-1.5 px-4 rounded-lg text-xs cursor-pointer"
               >
@@ -451,10 +500,10 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-slate-800 px-6 py-4 flex flex-wrap justify-between items-center text-xs text-slate-500">
         <span>ClínicaRed Citas • AWS Fargate Serverless Architecture</span>
-        <a 
-          href={docsUrl} 
-          target="_blank" 
-          rel="noopener noreferrer" 
+        <a
+          href={docsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
           className="text-slate-400 hover:text-sky-400 flex items-center space-x-1 transition"
         >
           <span>Docusaurus Docs</span>
