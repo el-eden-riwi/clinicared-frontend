@@ -12,7 +12,7 @@ export default function App() {
   const [showArchitectureModal, setShowArchitectureModal] = useState(false);
   const [notification, setNotification] = useState(null);
 
-  const docsUrl = "https://el-edan-riwi.github.io/clinicared-docs/";
+  const docsUrl = "https://el-eden-riwi.github.io/clinicared-docs/";
 
   const [bookingData, setBookingData] = useState({
     patientName: '',
