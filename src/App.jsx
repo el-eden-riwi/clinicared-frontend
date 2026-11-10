@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Calendar, Clock, User, ShieldCheck, Activity,
   Stethoscope, AlertTriangle, CheckCircle, Database,
-  Server, Cpu, ArrowRight, LogIn, Send, BookOpen, ExternalLink
+  Server, Cpu, ArrowRight, LogIn, Send, BookOpen, ExternalLink,
+  RefreshCw
 } from 'lucide-react';
 
 export default function App() {
@@ -11,6 +12,7 @@ export default function App() {
   const [idempotencyKey, setIdempotencyKey] = useState('');
   const [showArchitectureModal, setShowArchitectureModal] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [loadingRisk, setLoadingRisk] = useState(false);
 
   const docsUrl = "https://el-eden-riwi.github.io/clinicared-docs/";
 
@@ -22,12 +24,67 @@ export default function App() {
     time: '09:00 AM'
   });
 
+  // Pacientes de la agenda con sus variables de historial médico
   const [patientsRisk, setPatientsRisk] = useState([
-    { id: 1, name: 'Carlos Mendoza', specialty: 'Cardiología', time: '08:30 AM', risk: 'HIGH', score: '87%' },
-    { id: 2, name: 'Beatriz Castro', specialty: 'Medicina General', time: '09:15 AM', risk: 'MEDIUM', score: '45%' },
-    { id: 3, name: 'Andrés Morales', specialty: 'Dermatología', time: '10:00 AM', risk: 'LOW', score: '12%' },
-    { id: 4, name: 'Diana Quintero', specialty: 'Pediatría', time: '11:00 AM', risk: 'HIGH', score: '91%' },
+    { id: 1, name: 'Carlos Mendoza', specialty: 'Cardiología', time: '08:30 AM', total_appointments: 10, historical_no_shows: 8, days_since_last_visit: 20, age: 58, risk: 'HIGH', score: '80%' },
+    { id: 2, name: 'Beatriz Castro', specialty: 'Medicina General', time: '09:15 AM', total_appointments: 10, historical_no_shows: 4, days_since_last_visit: 60, age: 42, risk: 'MEDIUM', score: '40%' },
+    { id: 3, name: 'Andrés Morales', specialty: 'Dermatología', time: '10:00 AM', total_appointments: 10, historical_no_shows: 1, days_since_last_visit: 90, age: 28, risk: 'LOW', score: '10%' },
+    { id: 4, name: 'Diana Quintero', specialty: 'Pediatría', time: '11:00 AM', total_appointments: 12, historical_no_shows: 10, days_since_last_visit: 45, age: 34, risk: 'HIGH', score: '83%' },
   ]);
+
+  // Consumo del endpoint analítico /risk/calculate
+  const fetchPatientsRisk = async () => {
+    setLoadingRisk(true);
+    try {
+      const updatedPatients = await Promise.all(
+        patientsRisk.map(async (p) => {
+          try {
+            const res = await fetch('http://127.0.0.1:8000/risk/calculate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                total_appointments: p.total_appointments,
+                historical_no_shows: p.historical_no_shows,
+                days_since_last_visit: p.days_since_last_visit,
+                age: p.age
+              })
+            });
+
+            if (res.ok) {
+              const resJson = await res.json();
+              return {
+                ...p,
+                risk: resJson.data.classification,
+                score: `${resJson.data.risk_score_percentage}%`
+              };
+            }
+          } catch (err) {
+            console.error('Error consultando /risk/calculate para', p.name, err);
+          }
+          return p;
+        })
+      );
+
+      setPatientsRisk(updatedPatients);
+      setNotification({
+        title: 'Semáforo de Riesgo Sincronizado',
+        message: 'Métricas analíticas calculadas por FastAPI (/risk/calculate).',
+        type: 'success'
+      });
+    } catch (error) {
+      console.error('Fallo en sincronización de riesgos:', error);
+    } finally {
+      setLoadingRisk(false);
+      setTimeout(() => setNotification(null), 5000);
+    }
+  };
+
+  // Recalcular riesgos al acceder al Portal Médico
+  useEffect(() => {
+    if (currentView === 'doctor-portal') {
+      fetchPatientsRisk();
+    }
+  }, [currentView]);
 
   const startBooking = () => {
     const uniqueKey = 'idemp_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
@@ -80,7 +137,7 @@ export default function App() {
         },
         body: JSON.stringify({
           recipient: patient.name,
-          message: `Recordatorio urgente Celery: Riesgo ${patient.risk} (${patient.score}) en ${patient.specialty}`,
+          message: `Recordatorio urgente: Riesgo ${patient.risk} (${patient.score}) en ${patient.specialty}`,
           channel: 'SMS'
         })
       });
@@ -88,15 +145,15 @@ export default function App() {
       const data = await response.json();
 
       setNotification({
-        title: 'Tarea Asíncrona en Celery',
+        title: 'Tarea Asíncrona Despachada',
         message: `Evento para ${patient.name} encolado en RabbitMQ [${data.status || 'QUEUED'}].`,
         type: 'info'
       });
     } catch (error) {
-      console.error('Error al notificar Celery:', error);
+      console.error('Error al notificar:', error);
       setNotification({
-        title: 'Tarea Asíncrona en Celery',
-        message: `Evento de recordatorio prioritario para ${patient.name} despachado a la cola RabbitMQ.`,
+        title: 'Tarea Asíncrona Despachada',
+        message: `Evento de recordatorio prioritario para ${patient.name} despachado a RabbitMQ.`,
         type: 'info'
       });
     }
@@ -208,7 +265,7 @@ export default function App() {
                 Gestión Clínica con Analítica Predictiva en Tiempo Real
               </h2>
               <p className="text-slate-400 text-base md:text-lg">
-                Agendamiento transaccional protegido con idempotencia y predicción de inasistencia impulsado por PySpark y Apache Airflow.
+                Agendamiento transaccional protegido con idempotencia y predicción de inasistencia impulsado por PySpark y FastAPI.
               </p>
               <div className="flex flex-wrap justify-center gap-4 pt-4">
                 <button
@@ -236,7 +293,7 @@ export default function App() {
                 </div>
                 <h3 className="text-lg font-bold text-white mb-2">Idempotencia Garantizada</h3>
                 <p className="text-sm text-slate-400 leading-relaxed">
-                  Evita dobles cobros y duplicados en PostgreSQL usando claves únicas generadas antes del envío.
+                  Evita duplicados y bloqueos de mensajes en RabbitMQ usando identificadores únicos validados en memoria.
                 </p>
               </div>
 
@@ -246,7 +303,7 @@ export default function App() {
                 </div>
                 <h3 className="text-lg font-bold text-white mb-2">Semáforo de Riesgo (No-Show)</h3>
                 <p className="text-sm text-slate-400 leading-relaxed">
-                  Pipelines analíticos procesan datos históricos para calcular la probabilidad de ausencia médica.
+                  FastAPI procesa variables históricas en vivo mediante la ruta /risk/calculate para anticipar inasistencias.
                 </p>
               </div>
 
@@ -256,7 +313,7 @@ export default function App() {
                 </div>
                 <h3 className="text-lg font-bold text-white mb-2">Asincronismo con RabbitMQ</h3>
                 <p className="text-sm text-slate-400 leading-relaxed">
-                  Desacople completo entre el registro de citas y el procesamiento de alertas en segundo plano.
+                  Desacople completo entre el registro de citas y el procesamiento de recordatorios en colas resilientes.
                 </p>
               </div>
             </div>
@@ -268,7 +325,7 @@ export default function App() {
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-2xl font-bold text-white">Agendar Cita Médica</h3>
-                <p className="text-xs text-slate-400">Transacción síncrona en FastAPI + PostgreSQL</p>
+                <p className="text-xs text-slate-400">Transacción síncrona en FastAPI + RabbitMQ</p>
               </div>
               <button onClick={() => setCurrentView('home')} className="text-slate-400 hover:text-white text-sm cursor-pointer">
                 Cancelar
@@ -356,11 +413,19 @@ export default function App() {
 
         {currentView === 'doctor-portal' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-end border-b border-slate-800 pb-4">
+            <div className="flex flex-wrap justify-between items-end border-b border-slate-800 pb-4 gap-4">
               <div>
-                <span className="text-xs text-sky-400 font-semibold tracking-wide uppercase">Capa Analítica (PySpark)</span>
+                <span className="text-xs text-sky-400 font-semibold tracking-wide uppercase">Capa Analítica en Vivo (FastAPI + PySpark)</span>
                 <h3 className="text-2xl font-bold text-white">Semáforo de Riesgo No-Show</h3>
               </div>
+              <button
+                onClick={fetchPatientsRisk}
+                disabled={loadingRisk}
+                className="inline-flex items-center space-x-2 text-xs bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 hover:border-sky-500 px-3.5 py-2 rounded-lg transition cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingRisk ? 'animate-spin' : ''}`} />
+                <span>{loadingRisk ? 'Calculando en FastAPI...' : 'Recalcular con API'}</span>
+              </button>
             </div>
 
             <div className="bg-slate-800/40 border border-slate-800 rounded-2xl overflow-hidden">
@@ -370,6 +435,7 @@ export default function App() {
                     <th className="p-4">Hora</th>
                     <th className="p-4">Paciente</th>
                     <th className="p-4">Especialidad</th>
+                    <th className="p-4">Historial (Faltas/Total)</th>
                     <th className="p-4">Riesgo Calculado</th>
                     <th className="p-4 text-right">Acción</th>
                   </tr>
@@ -383,6 +449,9 @@ export default function App() {
                       </td>
                       <td className="p-4 font-semibold text-white">{p.name}</td>
                       <td className="p-4 text-slate-300">{p.specialty}</td>
+                      <td className="p-4 text-slate-400 text-xs font-mono">
+                        {p.historical_no_shows} / {p.total_appointments} citas ({p.days_since_last_visit}d previas)
+                      </td>
                       <td className="p-4">
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
                           p.risk === 'HIGH' ? 'bg-rose-950 text-rose-400 border border-rose-800' :
@@ -400,7 +469,7 @@ export default function App() {
                           className="inline-flex items-center space-x-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-600 transition cursor-pointer"
                         >
                           <Send className="w-3 h-3 text-sky-400" />
-                          <span>Notificar Celery</span>
+                          <span>Notificar</span>
                         </button>
                       </td>
                     </tr>
@@ -472,7 +541,7 @@ export default function App() {
               </div>
               <div className="p-3 bg-slate-800/60 rounded-xl">
                 <span className="font-semibold text-indigo-400 block mb-0.5">Capa Analítica (OLAP)</span>
-                PySpark procesando métricas de ausentismo.
+                PySpark y motor de reglas procesando métricas de ausentismo.
               </div>
             </div>
 
