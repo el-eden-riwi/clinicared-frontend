@@ -3,7 +3,7 @@ import {
   Calendar, Clock, User, ShieldCheck, Activity,
   Stethoscope, AlertTriangle, CheckCircle, Database,
   Server, Cpu, ArrowRight, LogIn, Send, BookOpen, ExternalLink,
-  RefreshCw
+  RefreshCw, XCircle
 } from 'lucide-react';
 
 export default function App() {
@@ -18,59 +18,38 @@ export default function App() {
 
   const [bookingData, setBookingData] = useState({
     patientName: '',
+    national_id: '',
+    phone: '',
     specialty: 'Medicina General',
     doctor: 'Dra. Elena Gómez',
     date: '2026-11-15',
     time: '09:00 AM'
   });
 
-  // Pacientes de la agenda con sus variables de historial médico
-  const [patientsRisk, setPatientsRisk] = useState([
-    { id: 1, name: 'Carlos Mendoza', specialty: 'Cardiología', time: '08:30 AM', total_appointments: 10, historical_no_shows: 8, days_since_last_visit: 20, age: 58, risk: 'HIGH', score: '80%' },
-    { id: 2, name: 'Beatriz Castro', specialty: 'Medicina General', time: '09:15 AM', total_appointments: 10, historical_no_shows: 4, days_since_last_visit: 60, age: 42, risk: 'MEDIUM', score: '40%' },
-    { id: 3, name: 'Andrés Morales', specialty: 'Dermatología', time: '10:00 AM', total_appointments: 10, historical_no_shows: 1, days_since_last_visit: 90, age: 28, risk: 'LOW', score: '10%' },
-    { id: 4, name: 'Diana Quintero', specialty: 'Pediatría', time: '11:00 AM', total_appointments: 12, historical_no_shows: 10, days_since_last_visit: 45, age: 34, risk: 'HIGH', score: '83%' },
-  ]);
+  const [patientsRisk, setPatientsRisk] = useState([]);
 
-  // Consumo del endpoint analítico /risk/calculate
   const fetchPatientsRisk = async () => {
     setLoadingRisk(true);
+    fetch('http://localhost:8080/api/v1/dags/dag_daily_risk_calculation/dagRuns', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic ' + btoa('admin:admin')
+      },
+      body: JSON.stringify({})
+    }).catch(() => {});
+
     try {
-      const updatedPatients = await Promise.all(
-        patientsRisk.map(async (p) => {
-          try {
-            const res = await fetch('http://127.0.0.1:8000/risk/calculate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                total_appointments: p.total_appointments,
-                historical_no_shows: p.historical_no_shows,
-                days_since_last_visit: p.days_since_last_visit,
-                age: p.age
-              })
-            });
-
-            if (res.ok) {
-              const resJson = await res.json();
-              return {
-                ...p,
-                risk: resJson.data.classification,
-                score: `${resJson.data.risk_score_percentage}%`
-              };
-            }
-          } catch (err) {
-            console.error('Error consultando /risk/calculate para', p.name, err);
-          }
-          return p;
-        })
-      );
-
-      setPatientsRisk(updatedPatients);
-      setNotification({
-        title: 'Semáforo de Riesgo Sincronizado',
-        message: 'Métricas analíticas calculadas por FastAPI (/risk/calculate).',
-        type: 'success'
-      });
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/appointments/`);
+      if (res.ok) {
+        const data = await res.json();
+        setPatientsRisk(data);
+        setNotification({
+          title: 'Agenda y Riesgo Sincronizados con AWS RDS',
+          message: `${data.length} citas cargadas desde PostgreSQL RDS y pipeline Airflow + PySpark ejecutándose.`,
+          type: 'success'
+        });
+      }
     } catch (error) {
       console.error('Fallo en sincronización de riesgos:', error);
     } finally {
@@ -79,7 +58,6 @@ export default function App() {
     }
   };
 
-  // Recalcular riesgos al acceder al Portal Médico
   useEffect(() => {
     if (currentView === 'doctor-portal') {
       fetchPatientsRisk();
@@ -95,32 +73,37 @@ export default function App() {
   const handleBookingSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await fetch('http://127.0.0.1:8000/simulate/messaging/send', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/appointments/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Idempotency-Key': idempotencyKey,
         },
-        body: JSON.stringify({
-          recipient: bookingData.patientName,
-          message: `Cita confirmada con ${bookingData.doctor} (${bookingData.specialty}) el ${bookingData.date} a las ${bookingData.time}. Key: ${idempotencyKey}`,
-          channel: 'SMS'
-        })
+        body: JSON.stringify(bookingData)
       });
 
       const data = await response.json();
 
-      setNotification({
-        title: '¡Cita Agendada y Despachada!',
-        message: `Inyectada en RabbitMQ en vivo [${data.status || 'QUEUED'}]. Key: ${idempotencyKey}`,
-        type: 'success'
-      });
+      if (response.ok) {
+        setNotification({
+          title: '¡Cita Persistida en AWS RDS!',
+          message: `Guardada en PostgreSQL [${data.status}] con X-Idempotency-Key: ${idempotencyKey}`,
+          type: 'success'
+        });
+        setBookingData({ ...bookingData, patientName: '', national_id: '', phone: '' });
+      } else {
+        setNotification({
+          title: 'Aviso de Validación',
+          message: data.detail || 'No se pudo registrar la cita.',
+          type: 'info'
+        });
+      }
     } catch (error) {
       console.error('Error al conectar con la API:', error);
       setNotification({
-        title: '¡Cita Agendada (Modo Local)!',
-        message: `Registrada con Header X-Idempotency-Key: ${idempotencyKey}`,
-        type: 'success'
+        title: 'Error de Red',
+        message: 'No fue posible conectar con el balanceador de AWS.',
+        type: 'info'
       });
     }
 
@@ -128,42 +111,46 @@ export default function App() {
     setCurrentView('home');
   };
 
+  const updateAppointmentStatus = async (appointmentId, newStatus) => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/appointments/${appointmentId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res.ok) {
+        await fetchPatientsRisk();
+      }
+    } catch (err) {
+      console.error('Error actualizando estado en RDS:', err);
+    }
+  };
+
   const triggerCeleryTask = async (patient) => {
     try {
-      const response = await fetch('http://127.0.0.1:8000/simulate/messaging/send', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/simulate/messaging/send`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recipient: patient.name,
           message: `Recordatorio urgente: Riesgo ${patient.risk} (${patient.score}) en ${patient.specialty}`,
           channel: 'SMS'
         })
       });
-
       const data = await response.json();
-
       setNotification({
         title: 'Tarea Asíncrona Despachada',
-        message: `Evento para ${patient.name} encolado en RabbitMQ [${data.status || 'QUEUED'}].`,
+        message: `Evento para ${patient.name} encolado [${data.status || 'QUEUED'}].`,
         type: 'info'
       });
     } catch (error) {
       console.error('Error al notificar:', error);
-      setNotification({
-        title: 'Tarea Asíncrona Despachada',
-        message: `Evento de recordatorio prioritario para ${patient.name} despachado a RabbitMQ.`,
-        type: 'info'
-      });
     }
-
     setTimeout(() => setNotification(null), 5000);
   };
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans">
-      {/* 1. HUD de Infraestructura Activa en AWS */}
       <div className="bg-slate-950 border-b border-slate-800 text-xs px-4 py-2 flex flex-wrap justify-between items-center text-slate-400">
         <div className="flex items-center space-x-4">
           <span className="flex items-center text-emerald-400 font-semibold">
@@ -171,8 +158,8 @@ export default function App() {
             AWS Fargate (us-east-2)
           </span>
           <span className="flex items-center"><Server className="w-3.5 h-3.5 mr-1 text-sky-400" /> FastAPI</span>
-          <span className="flex items-center"><Database className="w-3.5 h-3.5 mr-1 text-indigo-400" /> PostgreSQL RDS</span>
-          <span className="flex items-center"><Cpu className="w-3.5 h-3.5 mr-1 text-orange-400" /> RabbitMQ Broker</span>
+          <span className="flex items-center"><Database className="w-3.5 h-3.5 mr-1 text-indigo-400" /> PostgreSQL RDS (Live)</span>
+          <span className="flex items-center"><Cpu className="w-3.5 h-3.5 mr-1 text-orange-400" /> Airflow + PySpark</span>
         </div>
         <button
           onClick={() => setShowArchitectureModal(true)}
@@ -182,7 +169,6 @@ export default function App() {
         </button>
       </div>
 
-      {/* 2. Barra de Navegación Principal */}
       <nav className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-40 px-6 py-4 flex justify-between items-center">
         <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setCurrentView('home')}>
           <div className="bg-sky-500 p-2 rounded-xl text-white">
@@ -238,7 +224,6 @@ export default function App() {
         </div>
       </nav>
 
-      {/* 3. Notificación Flotante (Toast) */}
       {notification && (
         <div className="fixed bottom-6 right-6 z-50 max-w-md bg-slate-800 border border-sky-500/50 shadow-2xl rounded-xl p-4 flex items-start space-x-3 text-sm">
           {notification.type === 'success' ? (
@@ -253,7 +238,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 4. Vistas */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-6">
         {currentView === 'home' && (
           <div className="space-y-12 py-8">
@@ -265,7 +249,7 @@ export default function App() {
                 Gestión Clínica con Analítica Predictiva en Tiempo Real
               </h2>
               <p className="text-slate-400 text-base md:text-lg">
-                Agendamiento transaccional protegido con idempotencia y predicción de inasistencia impulsado por PySpark y FastAPI.
+                Agendamiento transaccional persistido en AWS RDS con idempotencia y predicción de inasistencia impulsada por PySpark y FastAPI.
               </p>
               <div className="flex flex-wrap justify-center gap-4 pt-4">
                 <button
@@ -291,9 +275,9 @@ export default function App() {
                 <div className="p-3 bg-indigo-500/10 rounded-xl w-fit text-indigo-400 mb-4">
                   <ShieldCheck className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-white mb-2">Idempotencia Garantizada</h3>
+                <h3 className="text-lg font-bold text-white mb-2">Persistencia & Idempotencia</h3>
                 <p className="text-sm text-slate-400 leading-relaxed">
-                  Evita duplicados y bloqueos de mensajes en RabbitMQ usando identificadores únicos validados en memoria.
+                  Cada cita y paciente se almacena en PostgreSQL RDS validando llaves únicas para evitar registros duplicados.
                 </p>
               </div>
 
@@ -303,7 +287,7 @@ export default function App() {
                 </div>
                 <h3 className="text-lg font-bold text-white mb-2">Semáforo de Riesgo (No-Show)</h3>
                 <p className="text-sm text-slate-400 leading-relaxed">
-                  FastAPI procesa variables históricas en vivo mediante la ruta /risk/calculate para anticipar inasistencias.
+                  Calcula la probabilidad de inasistencia a partir del historial real de asistencias y faltas en base de datos.
                 </p>
               </div>
 
@@ -311,9 +295,9 @@ export default function App() {
                 <div className="p-3 bg-sky-500/10 rounded-xl w-fit text-sky-400 mb-4">
                   <Server className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-white mb-2">Asincronismo con RabbitMQ</h3>
+                <h3 className="text-lg font-bold text-white mb-2">Orquestación con Airflow + Spark</h3>
                 <p className="text-sm text-slate-400 leading-relaxed">
-                  Desacople completo entre el registro de citas y el procesamiento de recordatorios en colas resilientes.
+                  ETL automatizado extrayendo datos de AWS RDS para actualizar el DataMart operacional y encolar recordatorios.
                 </p>
               </div>
             </div>
@@ -325,7 +309,7 @@ export default function App() {
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-2xl font-bold text-white">Agendar Cita Médica</h3>
-                <p className="text-xs text-slate-400">Transacción síncrona en FastAPI + RabbitMQ</p>
+                <p className="text-xs text-slate-400">Persistencia directa en PostgreSQL AWS RDS</p>
               </div>
               <button onClick={() => setCurrentView('home')} className="text-slate-400 hover:text-white text-sm cursor-pointer">
                 Cancelar
@@ -348,6 +332,29 @@ export default function App() {
                   onChange={(e) => setBookingData({ ...bookingData, patientName: e.target.value })}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Documento / Cédula</label>
+                  <input
+                    type="text"
+                    placeholder="Ej. 1045998877"
+                    value={bookingData.national_id}
+                    onChange={(e) => setBookingData({ ...bookingData, national_id: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Teléfono SMS</label>
+                  <input
+                    type="text"
+                    placeholder="Ej. 3001234567"
+                    value={bookingData.phone}
+                    onChange={(e) => setBookingData({ ...bookingData, phone: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -405,7 +412,7 @@ export default function App() {
                 type="submit"
                 className="w-full mt-4 bg-sky-500 hover:bg-sky-400 text-white font-semibold py-3 rounded-xl transition cursor-pointer"
               >
-                Confirmar Cita
+                Confirmar y Guardar Cita
               </button>
             </form>
           </div>
@@ -415,7 +422,7 @@ export default function App() {
           <div className="space-y-6">
             <div className="flex flex-wrap justify-between items-end border-b border-slate-800 pb-4 gap-4">
               <div>
-                <span className="text-xs text-sky-400 font-semibold tracking-wide uppercase">Capa Analítica en Vivo (FastAPI + PySpark)</span>
+                <span className="text-xs text-sky-400 font-semibold tracking-wide uppercase">PostgreSQL AWS RDS + FastAPI + PySpark</span>
                 <h3 className="text-2xl font-bold text-white">Semáforo de Riesgo No-Show</h3>
               </div>
               <button
@@ -424,33 +431,49 @@ export default function App() {
                 className="inline-flex items-center space-x-2 text-xs bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 hover:border-sky-500 px-3.5 py-2 rounded-lg transition cursor-pointer disabled:opacity-50"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loadingRisk ? 'animate-spin' : ''}`} />
-                <span>{loadingRisk ? 'Calculando en FastAPI...' : 'Recalcular con API'}</span>
+                <span>{loadingRisk ? 'Sincronizando RDS...' : 'Recalcular con API'}</span>
               </button>
             </div>
 
-            <div className="bg-slate-800/40 border border-slate-800 rounded-2xl overflow-hidden">
+            <div className="bg-slate-800/40 border border-slate-800 rounded-2xl overflow-x-auto">
               <table className="w-full text-left border-collapse text-sm">
                 <thead>
                   <tr className="bg-slate-800/80 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
-                    <th className="p-4">Hora</th>
+                    <th className="p-4">Fecha / Hora</th>
                     <th className="p-4">Paciente</th>
                     <th className="p-4">Especialidad</th>
+                    <th className="p-4">Estado</th>
                     <th className="p-4">Historial (Faltas/Total)</th>
                     <th className="p-4">Riesgo Calculado</th>
-                    <th className="p-4 text-right">Acción</th>
+                    <th className="p-4 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
                   {patientsRisk.map((p) => (
                     <tr key={p.id} className="hover:bg-slate-800/30 transition">
-                      <td className="p-4 text-slate-300 font-mono flex items-center">
-                        <Clock className="w-3.5 h-3.5 mr-1.5 text-slate-500" />
-                        {p.time}
+                      <td className="p-4 text-slate-300 font-mono text-xs">
+                        <div>{p.date}</div>
+                        <div className="text-slate-400 flex items-center mt-0.5">
+                          <Clock className="w-3 h-3 mr-1 text-slate-500" />
+                          {p.time}
+                        </div>
                       </td>
-                      <td className="p-4 font-semibold text-white">{p.name}</td>
+                      <td className="p-4 font-semibold text-white">
+                        <div>{p.name}</div>
+                        <div className="text-xs text-slate-500 font-mono">{p.national_id}</div>
+                      </td>
                       <td className="p-4 text-slate-300">{p.specialty}</td>
+                      <td className="p-4">
+                        <span className={`px-2 py-0.5 rounded text-xs font-mono ${
+                          p.status === 'ATTENDED' ? 'bg-emerald-950 text-emerald-400' :
+                          p.status === 'NO_SHOW' ? 'bg-rose-950 text-rose-400' :
+                          'bg-slate-800 text-sky-300'
+                        }`}>
+                          {p.status}
+                        </span>
+                      </td>
                       <td className="p-4 text-slate-400 text-xs font-mono">
-                        {p.historical_no_shows} / {p.total_appointments} citas ({p.days_since_last_visit}d previas)
+                        {p.historical_no_shows} / {p.total_appointments} citas
                       </td>
                       <td className="p-4">
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
@@ -463,10 +486,26 @@ export default function App() {
                           {p.risk} ({p.score})
                         </span>
                       </td>
-                      <td className="p-4 text-right">
+                      <td className="p-4 text-right space-x-1.5 whitespace-nowrap">
+                        <button
+                          onClick={() => updateAppointmentStatus(p.id, 'ATTENDED')}
+                          title="Marcar Asistencia en RDS"
+                          className="inline-flex items-center text-xs bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 px-2 py-1.5 rounded-lg border border-emerald-800 transition cursor-pointer"
+                        >
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          <span>Asistió</span>
+                        </button>
+                        <button
+                          onClick={() => updateAppointmentStatus(p.id, 'NO_SHOW')}
+                          title="Registrar Inasistencia en RDS"
+                          className="inline-flex items-center text-xs bg-rose-950/80 hover:bg-rose-900 text-rose-300 px-2 py-1.5 rounded-lg border border-rose-800 transition cursor-pointer"
+                        >
+                          <XCircle className="w-3 h-3 mr-1" />
+                          <span>Faltó</span>
+                        </button>
                         <button
                           onClick={() => triggerCeleryTask(p)}
-                          className="inline-flex items-center space-x-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-600 transition cursor-pointer"
+                          className="inline-flex items-center space-x-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-600 transition cursor-pointer"
                         >
                           <Send className="w-3 h-3 text-sky-400" />
                           <span>Notificar</span>
@@ -494,7 +533,7 @@ export default function App() {
                   <User className="w-5 h-5 text-sky-400" />
                   <div>
                     <h4 className="text-sm font-semibold text-white">Soy Paciente</h4>
-                    <p className="text-xs text-slate-400">Agendar citas médicas</p>
+                    <p className="text-xs text-slate-400">Agendar citas médicas en AWS RDS</p>
                   </div>
                 </div>
                 <ArrowRight className="w-4 h-4 text-slate-500" />
@@ -508,7 +547,7 @@ export default function App() {
                   <Stethoscope className="w-5 h-5 text-emerald-400" />
                   <div>
                     <h4 className="text-sm font-semibold text-white">Soy Especialista Médico</h4>
-                    <p className="text-xs text-slate-400">Ver semáforo de riesgo predictivo</p>
+                    <p className="text-xs text-slate-400">Gestionar asistencias y semáforo predictivo</p>
                   </div>
                 </div>
                 <ArrowRight className="w-4 h-4 text-slate-500" />
@@ -518,7 +557,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal de Arquitectura */}
       {showArchitectureModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 max-w-lg w-full rounded-2xl p-6 space-y-4">
@@ -533,15 +571,15 @@ export default function App() {
             <div className="text-xs space-y-3 text-slate-300">
               <div className="p-3 bg-slate-800/60 rounded-xl">
                 <span className="font-semibold text-sky-400 block mb-0.5">Capa Transaccional (OLTP)</span>
-                FastAPI en AWS Fargate conectado a PostgreSQL RDS.
+                FastAPI en AWS Fargate conectado en vivo a PostgreSQL RDS.
               </div>
               <div className="p-3 bg-slate-800/60 rounded-xl">
-                <span className="font-semibold text-orange-400 block mb-0.5">Mensajería Asíncrona</span>
-                RabbitMQ para desacoplar tareas en segundo plano.
+                <span className="font-semibold text-orange-400 block mb-0.5">Orquestación & Mensajería</span>
+                Apache Airflow + RabbitMQ disparados automáticamente desde el cliente.
               </div>
               <div className="p-3 bg-slate-800/60 rounded-xl">
                 <span className="font-semibold text-indigo-400 block mb-0.5">Capa Analítica (OLAP)</span>
-                PySpark y motor de reglas procesando métricas de ausentismo.
+                PySpark procesando métricas reales de ausentismo desde AWS RDS.
               </div>
             </div>
 
@@ -566,9 +604,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Footer */}
       <footer className="border-t border-slate-800 px-6 py-4 flex flex-wrap justify-between items-center text-xs text-slate-500">
-        <span>ClínicaRed Citas • AWS Fargate Serverless Architecture</span>
+        <span>ClínicaRed Citas • AWS Fargate Serverless Architecture (ADR 005)</span>
         <a
           href={docsUrl}
           target="_blank"
