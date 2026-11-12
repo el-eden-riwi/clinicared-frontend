@@ -1,3 +1,398 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ==========================================================================
+   1. TOKENS — values for the semantic colours mapped in tailwind.config.js.
+      Stored as "R G B" channels so Tailwind alpha modifiers work.
+   ========================================================================== */
+@layer base {
+  :root {
+    /* Surfaces — Hueso (bone paper) */
+    --surface: 244 240 230;            /* #F4F0E6  page ground            */
+    --surface-elevated: 251 249 243;   /* #FBF9F3  forms, raised panels   */
+    --surface-sunken: 232 226 211;     /* #E8E2D3  wells, hover fills     */
+
+    /* Surfaces — Noche (conifer night) */
+    --surface-night: 12 24 21;         /* #0C1815  HUD, hero, modal, foot */
+    --surface-night-raised: 20 38 33;  /* #142621  stacked night layers   */
+
+    /* Ink */
+    --ink: 17 31 28;                   /* #111F1C  primary ink            */
+    --ink-muted: 70 84 79;             /* #46544F  secondary text         */
+    --ink-faint: 92 104 98;            /* #5C6862  placeholders, captions */
+    --ink-inverse: 238 232 216;        /* #EEE8D8  text on night          */
+    --ink-inverse-muted: 163 177 169;  /* #A3B1A9  secondary text on night*/
+
+    /* Action — Pino */
+    --action: 30 75 67;                /* #1E4B43  primary fill           */
+    --action-deep: 20 55 48;           /* #143730  pressed                */
+
+    /* Accent — Cobre */
+    --accent: 163 68 26;               /* #A3441A  signal, focus, hover   */
+    --accent-ink: 143 58 20;           /* #8F3A14  accent as text         */
+    --accent-soft: 240 220 203;        /* #F0DCCB  selection tint         */
+    --accent-night: 227 154 107;       /* #E39A6B  accent on night        */
+
+    /* Tactile borders */
+    --tactile: 207 199 178;            /* #CFC7B2  hairlines (decorative) */
+    --tactile-strong: 124 120 101;     /* #7C7865  control borders  ≥3.9:1*/
+    --tactile-night: 52 76 69;         /* #344C45  hairlines on night     */
+
+    /* Status — madder / ochre / moss. fg + soft bg are AAA; -night for dark */
+    --danger: 127 36 24;               /* #7F2418 */
+    --danger-soft: 247 223 214;        /* #F7DFD6 */
+    --danger-night: 240 161 143;       /* #F0A18F */
+    --warn: 94 67 5;                   /* #5E4305 */
+    --warn-soft: 245 232 184;          /* #F5E8B8 */
+    --warn-night: 232 196 106;         /* #E8C46A */
+    --ok: 38 79 34;                    /* #264F22 */
+    --ok-soft: 222 232 204;            /* #DEE8CC */
+    --ok-night: 169 203 134;           /* #A9CB86 */
+
+    --focus: var(--accent);
+  }
+
+  /* Any dark layer opts in with .on-night so focus + eyebrows adapt */
+  .on-night {
+    --focus: var(--accent-night);
+  }
+
+  /* ========================================================================
+     2. BASE
+     ====================================================================== */
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-surface font-sans text-base text-ink antialiased;
+    min-height: 100vh;
+    overflow-x: clip;
+    text-rendering: optimizeLegibility;
+    /* Fine paper grain, rasterised once as a background image (no blend modes) */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.07 0 0 0 0 0.12 0 0 0 0 0.11 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  ::selection {
+    background: rgb(var(--accent-soft));
+    color: rgb(var(--ink));
+  }
+
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 3px;
+  }
+
+  /* Pointer users never need the extra offset ring on mouse press */
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      animation-delay: 0ms !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
+
+/* ==========================================================================
+   3. COMPONENTS
+   ========================================================================== */
+@layer components {
+  /* ---- Layout ----------------------------------------------------------- */
+  .frame {
+    @apply mx-auto w-full max-w-frame px-5 sm:px-8 lg:px-12;
+  }
+
+  /* Architectural column rules: 4 → 6 → 12 columns */
+  .grid-rules {
+    background-image: linear-gradient(to right, rgb(var(--tactile) / 0.55) 1px, transparent 1px);
+    background-size: calc(100% / 4) 100%;
+  }
+  @media (min-width: 768px) {
+    .grid-rules {
+      background-size: calc(100% / 6) 100%;
+    }
+  }
+  @media (min-width: 1024px) {
+    .grid-rules {
+      background-size: calc(100% / 12) 100%;
+    }
+  }
+
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-sm focus:bg-ink focus:px-4 focus:py-3 focus:text-sm focus:font-semibold focus:text-surface-elevated;
+  }
+
+  /* ---- Typography helpers ----------------------------------------------- */
+  .eyebrow {
+    @apply flex items-center gap-3 font-mono text-label uppercase text-ink-muted;
+  }
+  .eyebrow-index {
+    @apply font-semibold text-accent-ink;
+  }
+  .eyebrow-rule {
+    @apply h-px w-8 shrink-0 bg-tactile-strong;
+  }
+  .on-night .eyebrow {
+    color: rgb(var(--ink-inverse-muted));
+  }
+  .on-night .eyebrow-index {
+    color: rgb(var(--accent-night));
+  }
+  .on-night .eyebrow-rule {
+    background: rgb(var(--tactile-night));
+  }
+
+  /* Underline that draws in from the left */
+  .ulink {
+    background-image: linear-gradient(currentColor, currentColor);
+    background-repeat: no-repeat;
+    background-position: 0 100%;
+    background-size: 0 1px;
+    padding-bottom: 2px;
+    transition: background-size 0.5s cubic-bezier(0.16, 1, 0.3, 1), color 0.3s;
+  }
+  .ulink:hover,
+  .ulink:focus-visible {
+    background-size: 100% 1px;
+  }
+  .ulink-static {
+    background-size: 100% 1px;
+  }
+  .ulink-static:hover {
+    background-size: 0 1px;
+    background-position: 100% 100%;
+  }
+
+  /* ---- Buttons: a fill sweeps in from the left on hover ------------------ */
+  .btn {
+    @apply relative isolate inline-flex min-h-[3rem] cursor-pointer select-none items-center justify-center gap-3 overflow-hidden rounded-sm border px-6 text-[0.9375rem] font-semibold transition-[color,border-color,transform] duration-300 ease-out-expo active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn::before {
+    content: '';
+    @apply absolute inset-0 -z-10 origin-left scale-x-0 transition-transform duration-500 ease-out-expo;
+  }
+  .btn:hover:not(:disabled)::before,
+  .btn:focus-visible:not(:disabled)::before {
+    @apply scale-x-100;
+  }
+  .btn-sm {
+    @apply min-h-[2.5rem] gap-2 px-4 text-sm;
+  }
+
+  .btn-primary {
+    @apply border-action bg-action text-surface-elevated hover:border-accent;
+  }
+  .btn-primary::before {
+    @apply bg-accent;
+  }
+
+  .btn-ghost {
+    @apply border-tactile-strong bg-transparent text-ink hover:border-ink hover:text-surface-elevated;
+  }
+  .btn-ghost::before {
+    @apply bg-ink;
+  }
+  .btn-ghost[aria-current='page'] {
+    @apply border-ink bg-ink text-surface-elevated;
+  }
+
+  .btn-night {
+    @apply border-tactile-night bg-transparent text-ink-inverse hover:border-accent-glow hover:text-surface-night;
+  }
+  .btn-night::before {
+    @apply bg-accent-glow;
+  }
+
+  /* ---- Forms ------------------------------------------------------------- */
+  .field-label {
+    @apply mb-2 flex items-baseline justify-between gap-3 font-mono text-label uppercase text-ink-muted;
+  }
+  .field {
+    @apply block min-h-[3rem] w-full rounded-sm border border-tactile-strong bg-surface-elevated px-4 text-base text-ink transition-[border-color,box-shadow] duration-300 ease-out-expo placeholder:text-ink-faint hover:border-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/40;
+  }
+  select.field {
+    @apply cursor-pointer appearance-none pr-11;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23111F1C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+  }
+  input[type='date'].field {
+    color-scheme: light;
+  }
+
+  /* Numbered stations joined by a thin path (booking form) */
+  .station {
+    @apply relative pb-10 pl-12 last-of-type:pb-0;
+  }
+  .station::before {
+    content: '';
+    @apply absolute bottom-0 left-[0.9375rem] top-9 w-px bg-tactile;
+  }
+  .station:last-of-type::before {
+    display: none;
+  }
+  .station-node {
+    @apply absolute left-0 top-0 flex h-[1.875rem] w-[1.875rem] items-center justify-center rounded-full border border-tactile-strong bg-surface-elevated font-mono text-[0.6875rem] font-semibold text-ink transition-colors duration-300;
+  }
+  .station:focus-within .station-node {
+    @apply border-accent bg-accent text-surface-elevated;
+  }
+
+  /* ---- Status pills ------------------------------------------------------ */
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[0.75rem] font-semibold tracking-wide;
+  }
+
+  .meter {
+    @apply block h-[3px] w-full overflow-hidden rounded-full bg-tactile;
+  }
+  .meter > span {
+    @apply block h-full origin-left animate-meter-grow rounded-full transition-[width] duration-700 ease-out-expo;
+  }
+
+  /* ---- Landing: three-station index -------------------------------------- */
+  .feature {
+    @apply relative pb-12 pt-10;
+  }
+  .feature::before {
+    content: '';
+    @apply absolute inset-x-0 top-0 h-px bg-tactile-strong transition-colors duration-500;
+  }
+  .feature::after {
+    content: '';
+    @apply absolute left-0 top-[-5px] h-[9px] w-[9px] rounded-full border border-tactile-strong bg-surface transition-[transform,background-color,border-color] duration-500 ease-out-expo;
+  }
+  .feature:hover::before {
+    @apply bg-accent;
+  }
+  .feature:hover::after {
+    @apply scale-[1.5] border-accent bg-accent;
+  }
+  .feature-num {
+    @apply font-display text-numeral font-light text-ink transition-[color,transform,opacity] duration-500 ease-out-expo;
+  }
+  .feature:hover .feature-num {
+    @apply -translate-y-1 text-accent-ink;
+  }
+  /* Middle-earth style focus: siblings recede while one is attended to */
+  @media (hover: hover) {
+    .feature-index:hover .feature:not(:hover) .feature-num,
+    .feature-index:hover .feature:not(:hover) .feature-icon {
+      opacity: 0.35;
+    }
+  }
+  @media (min-width: 768px) {
+    .feature {
+      @apply px-8;
+    }
+    .feature:first-child {
+      @apply pl-0;
+    }
+    .feature:last-child {
+      @apply pr-0;
+    }
+  }
+
+  /* ---- Role "doors" (auth) ----------------------------------------------- */
+  .door {
+    @apply relative isolate flex w-full cursor-pointer items-center gap-5 overflow-hidden border-b border-tactile-strong px-1 py-7 text-left transition-[padding,color] duration-500 ease-out-expo hover:px-5 sm:gap-7 sm:py-9;
+  }
+  .door::before {
+    content: '';
+    @apply absolute inset-0 -z-10 origin-left scale-x-0 bg-action transition-transform duration-700 ease-out-expo;
+  }
+  .door:hover::before,
+  .door:focus-visible::before {
+    @apply scale-x-100;
+  }
+
+  /* ---- Doctor ledger ------------------------------------------------------ */
+  .ledger {
+    @apply w-full border-collapse text-left text-[0.9375rem];
+  }
+  .ledger thead th {
+    @apply border-b border-ink px-5 py-4 font-mono text-label font-medium uppercase text-ink-muted;
+  }
+  .ledger tbody tr {
+    @apply border-b border-tactile transition-colors duration-300;
+  }
+  .ledger tbody tr:hover {
+    @apply bg-surface-elevated;
+  }
+  .ledger tbody td {
+    @apply px-5 py-5 align-middle;
+  }
+  .ledger tbody td:first-child {
+    @apply relative;
+  }
+  .ledger tbody td:first-child::before {
+    content: '';
+    @apply absolute inset-y-0 left-0 w-[3px] origin-top scale-y-0 bg-accent transition-transform duration-500 ease-out-expo;
+  }
+  .ledger tbody tr:hover td:first-child::before {
+    @apply scale-y-100;
+  }
+
+  /* Table collapses to labelled cards on small screens */
+  @media (max-width: 767px) {
+    .ledger thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+    .ledger,
+    .ledger tbody,
+    .ledger tr,
+    .ledger td {
+      display: block;
+      width: 100%;
+    }
+    .ledger tbody tr {
+      @apply border-b-0 bg-surface-elevated px-5 py-4 shadow-lift;
+      margin-bottom: 1rem;
+      border: 1px solid rgb(var(--tactile));
+    }
+    .ledger tbody td {
+      @apply grid grid-cols-[6.5rem_1fr] items-baseline gap-3 px-0 py-2.5;
+    }
+    .ledger tbody td::before {
+      content: attr(data-label);
+      @apply font-mono text-label uppercase text-ink-muted;
+    }
+    .ledger tbody td:first-child::before {
+      content: attr(data-label);
+      position: static;
+      width: auto;
+      transform: none;
+      background: none;
+    }
+    .ledger tbody td:last-child {
+      @apply border-t border-tactile pt-4;
+    }
+  }
+
+  /* ---- Live indicator ------------------------------------------------------ */
+  .live-dot {
+    @apply relative inline-block h-2 w-2 rounded-full bg-status-ok-night;
+  }
+  .live-dot::after {
+    content: '';
+    @apply absolute inset-0 animate-ping-soft rounded-full bg-status-ok-night;
+  }
+}
