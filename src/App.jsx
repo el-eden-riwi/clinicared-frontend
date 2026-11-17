@@ -30,7 +30,7 @@ export default function App() {
 
   const fetchPatientsRisk = async () => {
     setLoadingRisk(true);
-    fetch('/api/v1/dags/dag_daily_risk_calculation/dagRuns', {
+    fetch('http://ec2-3-145-56-234.us-east-2.compute.amazonaws.com/api/v1/dags/dag_daily_risk_calculation/dagRuns', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
